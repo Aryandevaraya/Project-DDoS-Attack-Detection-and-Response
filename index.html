@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive DDoS Lab Guide</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Chosen Palette: Slate & Sky -->
+    <!-- Application Structure Plan: A task-oriented, single-page dashboard. A sticky top navigation allows users to jump to the four key phases: Lab Setup, Attack, Detection, and Mitigation. This non-linear structure is better for learning and reference than a simple scrollable document. Each section uses interactive elements—like clickable diagrams, copy-to-clipboard code blocks, and animated flows—to transform the static text into an engaging lab guide. This structure was chosen because it breaks down a complex process into manageable, interactive steps, which is more effective for a beginner's hands-on learning experience. -->
+    <!-- Visualization & Content Choices: 
+        - Lab Setup: Goal: Organize/Inform -> Viz: Interactive diagram (HTML/CSS) -> Interaction: Click on a VM to see details -> Justification: Visually represents the lab architecture, which is fundamental.
+        - Attack Flow: Goal: Demonstrate -> Viz: Animated arrow (HTML/CSS) -> Interaction: None -> Justification: Visually reinforces the cause-and-effect of the attack.
+        - Traffic Analysis: Goal: Compare/Analyze -> Viz: Bar Chart (Chart.js) -> Interaction: Hover for tooltips -> Justification: Conceptually visualizes traffic volume, making the attacker's high volume immediately obvious, simulating the goal of Wireshark analysis.
+        - Mitigation Flow: Goal: Demonstrate -> Viz: Animated step-by-step diagram (HTML/CSS/JS) -> Interaction: None -> Justification: Simplifies the complex interaction between logs, Fail2ban, and the firewall into an easy-to-understand process.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap');
+        .font-mono {
+            font-family: 'Roboto Mono', monospace;
+        }
+        .nav-link {
+            transition: all 0.3s ease;
+        }
+        .nav-link.active {
+            color: #0284c7; /* sky-600 */
+            border-bottom-color: #0284c7;
+        }
+        .content-section {
+            display: none;
+        }
+        .content-section.active {
+            display: block;
+        }
+        .code-block {
+            position: relative;
+            background-color: #1f2937; /* gray-800 */
+            color: #e5e7eb; /* gray-200 */
+            padding: 1rem;
+            border-radius: 0.5rem;
+            font-size: 0.875rem;
+            overflow-x: auto;
+        }
+        .copy-btn {
+            position: absolute;
+            top: 0.5rem;
+            right: 0.5rem;
+            background-color: #4b5563; /* gray-600 */
+            color: white;
+            border: none;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            cursor: pointer;
+            font-size: 0.75rem;
+            transition: background-color 0.2s;
+            z-index: 10;
+        }
+        .copy-btn:hover {
+            background-color: #6b7280; /* gray-500 */
+        }
+        .vm-card.active {
+            border-color: #0ea5e9; /* sky-500 */
+            box-shadow: 0 0 15px rgba(14, 165, 233, 0.4);
+        }
+        @keyframes flow {
+            0% { transform: translateX(-100%) scaleX(0.1); opacity: 0; }
+            40% { transform: translateX(0) scaleX(1); opacity: 1; }
+            60% { transform: translateX(0) scaleX(1); opacity: 1; }
+            100% { transform: translateX(100%) scaleX(0.1); opacity: 0; }
+        }
+        .attack-flow {
+            animation: flow 3s ease-in-out infinite;
+        }
+        @keyframes pulse-red {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            50% { box-shadow: 0 0 0 12px rgba(239, 68, 68, 0); }
+        }
+        .pulse-icon {
+            animation: pulse-red 2s infinite;
+        }
+        .chart-container {
+            position: relative; 
+            width: 100%; 
+            max-width: 600px; 
+            margin-left: auto; 
+            margin-right: auto; 
+            height: 300px;
+            max-height: 400px;
+        }
+        @media (min-width: 768px) { .chart-container { height: 350px; } }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+    <header class="bg-white/80 backdrop-blur-sm shadow-md sticky top-0 z-40">
+        <nav class="container mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <h1 class="text-xl md:text-2xl font-bold text-slate-900">
+                    <span class="text-sky-600">DDoS</span> Lab Guide
+                </h1>
+                <div class="hidden sm:flex sm:space-x-8">
+                    <a href="#setup" class="nav-link text-slate-600 hover:text-sky-600 font-medium border-b-2 border-transparent">Lab Setup</a>
+                    <a href="#attack" class="nav-link text-slate-600 hover:text-sky-600 font-medium border-b-2 border-transparent">Attack</a>
+                    <a href="#detect" class="nav-link text-slate-600 hover:text-sky-600 font-medium border-b-2 border-transparent">Detect</a>
+                    <a href="#mitigate" class="nav-link text-slate-600 hover:text-sky-600 font-medium border-b-2 border-transparent">Mitigate</a>
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
+
+        <!-- Lab Setup Section -->
+        <section id="setup" class="content-section">
+            <div class="text-center mb-12">
+                <h2 class="text-3xl md:text-4xl font-bold text-slate-900">Phase 1: Lab Environment Setup</h2>
+                <p class="mt-4 text-lg text-slate-600 max-w-3xl mx-auto">This section guides you through creating the virtual environment for our DDoS simulation. We will set up three distinct virtual machines (VMs) on an isolated network. Click on each component below to see its specific configuration and purpose in the lab.</p>
+            </div>
+            
+            <div class="grid md:grid-cols-3 gap-8 items-center text-center mb-8">
+                 <div class="vm-diagram-card" data-vm="attacker">
+                    <div class="p-6 bg-white rounded-lg shadow-lg border-2 border-slate-200 cursor-pointer transition-all duration-300">
+                        <div class="text-5xl mb-3">🖥️</div>
+                        <h3 class="font-bold text-xl text-red-600">VM1: Attacker</h3>
+                        <p class="text-slate-500">Kali Linux</p>
+                    </div>
+                </div>
+                <div class="relative">
+                    <div class="h-1 w-full bg-slate-300"></div>
+                    <div class="absolute inset-0 flex items-center justify-center">
+                        <div class="bg-slate-300 rounded-full p-2">
+                             <svg class="w-6 h-6 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071a7.5 7.5 0 0110.606 0M15.89 9.111a10.025 10.025 0 01-3.89 3.89m-3.89-3.89a10.025 10.025 0 013.89 3.89M3 12a9 9 0 1118 0 9 9 0 01-18 0z"></path></svg>
+                        </div>
+                    </div>
+                </div>
+                <div class="vm-diagram-card" data-vm="victim">
+                    <div class="p-6 bg-white rounded-lg shadow-lg border-2 border-slate-200 cursor-pointer transition-all duration-300">
+                        <div class="text-5xl mb-3">🎯</div>
+                        <h3 class="font-bold text-xl text-yellow-600">VM2: Victim</h3>
+                        <p class="text-slate-500">Ubuntu Server</p>
+                    </div>
+                </div>
+            </div>
+             <div class="grid grid-cols-1 md:grid-cols-5 gap-8 items-center text-center">
+                <div class="md:col-span-2"></div>
+                <div class="relative flex justify-center">
+                    <div class="w-1 h-24 bg-slate-300"></div>
+                </div>
+                <div class="md:col-span-2"></div>
+            </div>
+             <div class="grid grid-cols-1 md:grid-cols-5 gap-8 items-center text-center mb-12">
+                <div class="md:col-span-2"></div>
+                <div class="vm-diagram-card" data-vm="monitor">
+                     <div class="p-6 bg-white rounded-lg shadow-lg border-2 border-slate-200 cursor-pointer transition-all duration-300">
+                        <div class="text-5xl mb-3">🔬</div>
+                        <h3 class="font-bold text-xl text-sky-600">VM3: Monitor</h3>
+                        <p class="text-slate-500">Ubuntu Desktop</p>
+                    </div>
+                </div>
+                <div class="md:col-span-2"></div>
+            </div>
+
+            <div id="vm-details" class="mt-8 transition-all duration-500"></div>
+        </section>
+
+        <!-- Attack Section -->
+        <section id="attack" class="content-section">
+            <div class="text-center mb-12">
+                <h2 class="text-3xl md:text-4xl font-bold text-slate-900">Phase 2: Simulate the Attack</h2>
+                <p class="mt-4 text-lg text-slate-600 max-w-3xl mx-auto">In this phase, we use the Attacker machine (VM1) to launch a simulated HTTP flood attack against the Victim machine (VM2) using DDoSify. This will generate a high volume of traffic designed to overwhelm the victim's web server.</p>
+            </div>
+
+            <div class="flex flex-col md:flex-row items-center justify-around gap-8 p-6 bg-white rounded-lg shadow-xl">
+                <div class="text-center">
+                    <div class="text-5xl mb-3">🖥️</div>
+                    <h3 class="font-bold text-xl text-red-600">VM1: Attacker</h3>
+                    <p class="text-slate-500">192.168.56.10</p>
+                </div>
+
+                <div class="w-full md:w-1/3 relative overflow-hidden">
+                    <div class="text-center mb-2 font-semibold text-slate-700">HTTP Flood</div>
+                    <div class="h-1.5 w-full bg-slate-200 rounded-full">
+                        <div class="h-1.5 bg-red-500 rounded-full attack-flow"></div>
+                    </div>
+                </div>
+
+                <div class="text-center">
+                     <div class="text-5xl mb-3">🎯</div>
+                    <h3 class="font-bold text-xl text-yellow-600">VM2: Victim</h3>
+                    <p class="text-slate-500">192.168.56.20</p>
+                </div>
+            </div>
+
+             <div class="mt-12 max-w-3xl mx-auto">
+                <h3 class="text-2xl font-semibold mb-4 text-center">Execution Steps</h3>
+                <div class="bg-white p-6 rounded-lg shadow-lg space-y-4">
+                    <div>
+                        <p class="font-medium text-slate-700">1. On the <span class="font-bold text-red-600">Attacker Machine</span>, run this command:</p>
+                        <pre class="code-block font-mono mt-2"><button class="copy-btn">Copy</button><code>ddosify -t http://192.168.56.20 -n 1000 -c 100</code></pre>
+                    </div>
+                    <div>
+                        <p class="font-medium text-slate-700">2. Expected Outcome:</p>
+                        <div class="mt-2 p-4 bg-yellow-50 border border-yellow-200 rounded-lg flex items-center gap-4">
+                            <div class="w-12 h-12 flex-shrink-0 bg-yellow-100 rounded-full flex items-center justify-center">
+                                <span class="text-2xl">⚠️</span>
+                            </div>
+                            <div>
+                                <h4 class="font-bold text-yellow-800">Server Unresponsive</h4>
+                                <p class="text-yellow-700">The Victim's web server will become very slow or completely unavailable to legitimate requests due to the high volume of traffic.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Detect Section -->
+        <section id="detect" class="content-section">
+            <div class="text-center mb-12">
+                <h2 class="text-3xl md:text-4xl font-bold text-slate-900">Phase 3: Detect the Attack</h2>
+                <p class="mt-4 text-lg text-slate-600 max-w-3xl mx-auto">Now, we'll use the Monitoring machine (VM3) to identify the ongoing attack. This involves two key methods: capturing raw traffic for manual analysis and using an Intrusion Detection System (IDS) for automated alerts.</p>
+            </div>
+            
+            <div class="max-w-4xl mx-auto">
+                 <div class="mb-8 border-b border-slate-200">
+                    <nav class="-mb-px flex space-x-6" aria-label="Tabs">
+                        <button class="tab-link whitespace-nowrap py-4 px-1 border-b-2 font-medium text-lg border-sky-500 text-sky-600" data-tab="wireshark">Analysis with Wireshark/tcpdump</button>
+                        <button class="tab-link whitespace-nowrap py-4 px-1 border-b-2 font-medium text-lg border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300" data-tab="snort">Detection with Snort</button>
+                    </nav>
+                </div>
+
+                <div id="wireshark" class="tab-content">
+                    <p class="text-slate-700 mb-6">First, we capture the live network traffic using `tcpdump`. Then, we analyze the resulting file with Wireshark to pinpoint the source of the excessive traffic. The chart below conceptually represents what you would find in Wireshark's analysis: one IP address sending far more packets than any other.</p>
+                    
+                    <p class="font-medium text-slate-700">1. On the <span class="font-bold text-sky-600">Monitoring Machine</span>, capture traffic:</p>
+                    <pre class="code-block font-mono my-2"><button class="copy-btn">Copy</button><code>sudo tcpdump -i eth0 -w ddos-attack.pcap</code></pre>
+
+                    <h4 class="text-xl font-semibold mt-8 mb-4 text-center">Conceptual Traffic Analysis</h4>
+                    <div class="bg-white p-6 rounded-lg shadow-lg">
+                        <div class="chart-container">
+                             <canvas id="trafficChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="snort" class="tab-content hidden">
+                    <p class="text-slate-700 mb-6">Using Snort as an IDS automates detection. We configure Snort with a specific rule to watch for the signs of an HTTP flood. When the attack occurs, Snort will generate an immediate alert on the console.</p>
+                    
+                    <p class="font-medium text-slate-700">1. Add this DDoS detection rule to `/etc/snort/snort.conf`:</p>
+                    <pre class="code-block font-mono my-2"><button class="copy-btn">Copy</button><code class="language-properties">alert tcp any any -> $HOME_NET 80 (msg:"DDoS Detected - High HTTP Connections"; flow:to_server,established; threshold: type threshold, track by_src, count 20, seconds 5; classtype:attempted-dos; sid:1000001; rev:1;)</code></pre>
+
+                    <p class="font-medium text-slate-700 mt-4">2. Run Snort in IDS mode on the <span class="font-bold text-sky-600">Monitoring Machine</span>:</p>
+                    <pre class="code-block font-mono my-2"><button class="copy-btn">Copy</button><code>sudo snort -A console -q -c /etc/snort/snort.conf -i eth0</code></pre>
+                    
+                     <div class="mt-6">
+                        <p class="font-medium text-slate-700">3. Expected Alert Output:</p>
+                        <div class="mt-2 p-4 bg-red-50 border border-red-200 rounded-lg">
+                            <pre class="font-mono text-sm text-red-800">[**] [1:1000001:1] DDoS Attack Detected - High HTTP Connections [**]
+[Priority: 0]
+{TCP} 192.168.56.10:54321 -> 192.168.56.20:80</pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Mitigate Section -->
+        <section id="mitigate" class="content-section">
+             <div class="text-center mb-12">
+                <h2 class="text-3xl md:text-4xl font-bold text-slate-900">Phase 4: Mitigate the Attack</h2>
+                <p class="mt-4 text-lg text-slate-600 max-w-3xl mx-auto">The final phase is response. We will use `fail2ban` on the Victim machine (VM2) to automatically parse web server logs, identify the attacker's IP based on excessive requests, and create a firewall rule to block it, thus mitigating the attack.</p>
+            </div>
+
+            <div class="max-w-4xl mx-auto">
+                <h3 class="text-2xl font-semibold mb-4 text-center">Fail2ban Mitigation Flow</h3>
+                <div class="p-6 bg-white rounded-lg shadow-xl">
+                    <div class="flex flex-col md:flex-row justify-between items-center space-y-8 md:space-y-0 md:space-x-4">
+                        <!-- Step 1 -->
+                        <div class="text-center w-full md:w-1/4">
+                            <div class="mx-auto w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-2">
+                                <span class="text-3xl">🔥</span>
+                            </div>
+                            <h4 class="font-bold">1. Attack</h4>
+                            <p class="text-sm text-slate-600">Attacker IP (192.168.56.10) floods the server.</p>
+                        </div>
+                        <!-- Arrow -->
+                        <div class="text-sky-500 text-2xl font-bold transform rotate-90 md:rotate-0">→</div>
+                        <!-- Step 2 -->
+                         <div class="text-center w-full md:w-1/4">
+                            <div class="mx-auto w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mb-2">
+                                <span class="text-3xl">📜</span>
+                            </div>
+                            <h4 class="font-bold">2. Log</h4>
+                            <p class="text-sm text-slate-600">Apache logs every single request in `access.log`.</p>
+                        </div>
+                        <!-- Arrow -->
+                        <div class="text-sky-500 text-2xl font-bold transform rotate-90 md:rotate-0">→</div>
+                        <!-- Step 3 -->
+                         <div class="text-center w-full md:w-1/4">
+                            <div class="mx-auto w-16 h-16 bg-sky-100 rounded-full flex items-center justify-center mb-2">
+                                <span class="text-3xl">🛡️</span>
+                            </div>
+                            <h4 class="font-bold">3. Detect & Ban</h4>
+                            <p class="text-sm text-slate-600">Fail2ban sees 300+ requests and bans the IP.</p>
+                        </div>
+                         <!-- Arrow -->
+                        <div class="text-sky-500 text-2xl font-bold transform rotate-90 md:rotate-0">→</div>
+                         <!-- Step 4 -->
+                        <div class="text-center w-full md:w-1/4">
+                            <div class="mx-auto w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-2">
+                                <span class="text-3xl">✅</span>
+                            </div>
+                            <h4 class="font-bold">4. Mitigated</h4>
+                            <p class="text-sm text-slate-600">Firewall blocks the attacker. Server is responsive again.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-10 grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div class="bg-white p-6 rounded-lg shadow-lg">
+                        <p class="font-medium text-slate-700">1. Create a custom filter in `/etc/fail2ban/filter.d/http-get-dos.conf`:</p>
+                        <pre class="code-block font-mono mt-2"><button class="copy-btn">Copy</button><code class="language-ini">[Definition]
+failregex = ^&lt;HOST&gt; -.*"GET.*HTTP.*"$
+ignoreregex =</code></pre>
+                    </div>
+                     <div class="bg-white p-6 rounded-lg shadow-lg">
+                        <p class="font-medium text-slate-700">2. Add this jail to `/etc/fail2ban/jail.local`:</p>
+                        <pre class="code-block font-mono mt-2"><button class="copy-btn">Copy</button><code class="language-ini">[http-get-dos]
+enabled  = true
+port     = http,https
+filter   = http-get-dos
+logpath  = /var/log/apache2/access.log
+maxretry = 300
+findtime = 300
+bantime  = 3600</code></pre>
+                    </div>
+                </div>
+
+                 <div class="mt-8 text-center">
+                    <p class="font-medium text-slate-700">3. Restart Fail2ban to apply changes:</p>
+                    <pre class="code-block font-mono mt-2 max-w-md mx-auto"><button class="copy-btn">Copy</button><code>sudo systemctl restart fail2ban</code></pre>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const navLinks = document.querySelectorAll('.nav-link');
+            const sections = document.querySelectorAll('.content-section');
+            const vmCards = document.querySelectorAll('.vm-diagram-card');
+            const vmDetailsContainer = document.getElementById('vm-details');
+            const tabLinks = document.querySelectorAll('.tab-link');
+            const tabContents = document.querySelectorAll('.tab-content');
+
+            const vmDetails = {
+                attacker: {
+                    title: 'VM1: Attacker Machine (Kali Linux)',
+                    color: 'red',
+                    ip: '192.168.56.10',
+                    purpose: 'To launch the simulated DDoS attack. Kali Linux comes pre-installed with many penetration testing tools, including DDoSify, which we will use to generate a flood of HTTP traffic.',
+                    config: `auto eth0\niface eth0 inet static\n    address 192.168.56.10\n    netmask 255.255.255.0`
+                },
+                victim: {
+                    title: 'VM2: Victim Machine (Ubuntu Server)',
+                    color: 'yellow',
+                    ip: '192.168.56.20',
+                    purpose: 'The target of our attack. It runs an Apache web server. Our goal is to make this server unresponsive by overwhelming it with requests from the attacker machine.',
+                    config: `network:\n  ethernets:\n    enp0s3:\n      addresses: [192.168.56.20/24]`
+                },
+                monitor: {
+                    title: 'VM3: Monitoring Machine (Ubuntu Desktop)',
+                    color: 'sky',
+                    ip: '192.168.56.30',
+                    purpose: 'Our security operations center. We use this machine to capture and analyze traffic with Wireshark and run our Intrusion Detection System, Snort, to automatically detect the attack signature.',
+                    config: `network:\n  ethernets:\n    enp0s3:\n      addresses: [192.168.56.30/24]`
+                }
+            };
+
+            const updateContent = (hash) => {
+                const targetHash = hash || '#setup';
+                
+                sections.forEach(section => {
+                    if ('#' + section.id === targetHash) {
+                        section.classList.add('active');
+                    } else {
+                        section.classList.remove('active');
+                    }
+                });
+
+                navLinks.forEach(link => {
+                    if (link.getAttribute('href') === targetHash) {
+                        link.classList.add('active');
+                    } else {
+                        link.classList.remove('active');
+                    }
+                });
+            };
+
+            navLinks.forEach(link => {
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const targetHash = e.target.getAttribute('href');
+                    history.pushState(null, null, targetHash);
+                    updateContent(targetHash);
+                });
+            });
+
+            window.addEventListener('popstate', () => {
+                updateContent(window.location.hash);
+            });
+
+            // Initial load
+            updateContent(window.location.hash);
+
+            // VM Card interaction
+            vmCards.forEach(card => {
+                card.addEventListener('click', () => {
+                    const vmKey = card.dataset.vm;
+                    const details = vmDetails[vmKey];
+
+                    vmCards.forEach(c => c.querySelector('div').classList.remove('active', 'border-sky-500', 'border-red-500', 'border-yellow-500'));
+                    card.querySelector('div').classList.add('active', `border-${details.color}-500`);
+
+                    vmDetailsContainer.innerHTML = `
+                        <div class="bg-white p-6 rounded-lg shadow-xl border-t-4 border-${details.color}-500 transition-all duration-300">
+                            <h3 class="text-2xl font-bold text-slate-900 mb-2">${details.title}</h3>
+                            <p class="font-mono bg-slate-100 px-2 py-1 rounded-md inline-block text-slate-700 mb-4">IP Address: ${details.ip}</p>
+                            <p class="text-slate-600 mb-4">${details.purpose}</p>
+                            <p class="font-medium text-slate-700">Example Static IP Configuration:</p>
+                            <pre class="code-block font-mono mt-2"><button class="copy-btn">Copy</button><code>${details.config}</code></pre>
+                        </div>
+                    `;
+                    vmDetailsContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    addCopyFunctionality(vmDetailsContainer);
+                });
+            });
+
+            // Tab functionality
+            tabLinks.forEach(link => {
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const tabId = e.target.dataset.tab;
+
+                    tabLinks.forEach(l => l.classList.remove('border-sky-500', 'text-sky-600'));
+                    e.target.classList.add('border-sky-500', 'text-sky-600');
+                    
+                    tabContents.forEach(content => {
+                        if (content.id === tabId) {
+                            content.classList.remove('hidden');
+                        } else {
+                            content.classList.add('hidden');
+                        }
+                    });
+                });
+            });
+
+            // Copy to clipboard functionality
+            const addCopyFunctionality = (container) => {
+                container.querySelectorAll('.copy-btn').forEach(button => {
+                    button.addEventListener('click', () => {
+                        const code = button.nextElementSibling.innerText;
+                        document.execCommand('copy');
+                        button.innerText = 'Copied!';
+                        setTimeout(() => {
+                            button.innerText = 'Copy';
+                        }, 2000);
+                    });
+                });
+            }
+            addCopyFunctionality(document.body);
+            
+            // Traffic Chart
+            const ctx = document.getElementById('trafficChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['Legitimate User 1', 'Attacker: 192.168.56.10', 'Legitimate User 2', 'Legitimate User 3'],
+                    datasets: [{
+                        label: '# of Packets Sent',
+                        data: [45, 1150, 60, 38],
+                        backgroundColor: [
+                            'rgba(56, 189, 248, 0.6)',
+                            'rgba(239, 68, 68, 0.6)',
+                            'rgba(56, 189, 248, 0.6)',
+                            'rgba(56, 189, 248, 0.6)',
+                        ],
+                        borderColor: [
+                            'rgba(14, 116, 144, 1)',
+                            'rgba(185, 28, 28, 1)',
+                            'rgba(14, 116, 144, 1)',
+                            'rgba(14, 116, 144, 1)',
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Packet Count'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                             callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed.y !== null) {
+                                        label += context.parsed.y + ' packets';
+                                    }
+                                    return label;
+                                }
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: 'Simulated Network Traffic Volume by IP'
+                        }
+                    }
+                }
+            });
+
+        });
+    </script>
+</body>
+</html>
